@@ -98,9 +98,10 @@ def get_youtube_gameplay(game_name):
     print(f"   📦 Slicing YouTube Video '{ranked_id}' (Extracting {start_time}s to {end_time}s)...", flush=True)
     out_tmpl = f"yt_bg_{ranked_id}.%(ext)s"
     
+    # 🔥 FIXED FORMAT: Grab best video regardless of whether it's mp4, webm, or mkv.
     dl_cmd =[
         "yt-dlp",
-        "-f", "bestvideo[height<=1080][ext=mp4]/bestvideo[ext=mp4]/best",
+        "-f", "bestvideo[height<=1080]/bestvideo/best",
         "--download-sections", f"*{start_time}-{end_time}",
         "--force-overwrites",
         "-o", out_tmpl
