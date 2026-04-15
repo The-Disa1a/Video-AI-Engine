@@ -1,4 +1,4 @@
-import os, json, re, requests, subprocess, urllib.request, urllib.parse
+import os, json, re, requests, subprocess, urllib.request, urllib.parse, glob
 from PIL import Image, ImageDraw, ImageFont
 import pytesseract
 from vid_engine import context
@@ -84,22 +84,34 @@ def get_youtube_gameplay(game_name):
 
     start_time = min(int(ranked_dur * 0.2), max(0, ranked_dur - 180))
     end_time = start_time + 180
-    fname = f"yt_bg_{ranked_id}.mp4"
     
-    if not os.path.exists(fname):
-        print(f"   📦 Slicing YouTube Video '{ranked_id}' (Extracting {start_time}s to {end_time}s)...", flush=True)
-        dl_cmd =[
-            "yt-dlp",
-            "-f", "bestvideo[height<=1080][ext=mp4]/bestvideo[ext=mp4]/best",
-            "--download-sections", f"*{start_time}-{end_time}",
-            f"https://www.youtube.com/watch?v={ranked_id}",
-            "-o", fname
-        ]
-        subprocess.run(dl_cmd, capture_output=True)
+    # Check if we already have it from a previous run
+    existing = glob.glob(f"yt_bg_{ranked_id}.*")
+    if existing:
+        print(f"[✅] YouTube hook already exists: {existing[0]}", flush=True)
+        return existing[0]
 
-    if os.path.exists(fname):
-        print("[✅] YouTube hook successfully sliced and downloaded!", flush=True)
-        return fname
+    print(f"   📦 Slicing YouTube Video '{ranked_id}' (Extracting {start_time}s to {end_time}s)...", flush=True)
+    out_tmpl = f"yt_bg_{ranked_id}.%(ext)s"
+    
+    dl_cmd =[
+        "yt-dlp",
+        "-f", "bestvideo[height<=1080][ext=mp4]/bestvideo[ext=mp4]/best",
+        "--download-sections", f"*{start_time}-{end_time}",
+        "--force-overwrites",
+        "-o", out_tmpl,
+        f"https://www.youtube.com/watch?v={ranked_id}"
+    ]
+    
+    result = subprocess.run(dl_cmd, capture_output=True, text=True)
+    
+    # Dynamically find the file regardless of extension
+    downloaded = glob.glob(f"yt_bg_{ranked_id}.*")
+    if downloaded:
+        print(f"[✅] YouTube hook successfully sliced and downloaded! ({downloaded[0]})", flush=True)
+        return downloaded[0]
+    else:
+        print(f"   [⚠️] yt-dlp slice failed. Error:\n{result.stderr}", flush=True)
         
     return None
 
@@ -224,7 +236,7 @@ def get_giphy_gif(search_query, sentence_context):
                         config=cfg
                     )
 
-                    print("      [📡] Stream: ", end="", flush=True)
+                    print("[📡] Stream: ", end="", flush=True)
                     full_text = ""
                     for chunk in resp_stream:
                         if chunk.text:
@@ -239,7 +251,7 @@ def get_giphy_gif(search_query, sentence_context):
                     if "matches" in parsed_json and parsed_json["matches"]:
                         ranked_ids = [item["id"] for item in parsed_json["matches"] if "id" in item]
                         if ranked_ids:
-                            display_list =[f"{rid}:{next((g['title'] for g in gif_list if g['id'] == rid), 'Unknown')}" for rid in ranked_ids]
+                            display_list = [f"{rid}:{next((g['title'] for g in gif_list if g['id'] == rid), 'Unknown')}" for rid in ranked_ids]
                             print(f"[🤖 Gif's Gemma Choosed]: {json.dumps(display_list)}", flush=True)
                             success = True
                             break
@@ -373,7 +385,7 @@ def make_popup(path, is_wiki=False, card_label=""):
 
 def get_background_videos(keywords, target_duration, prefix_idx, sentence_context=""):
     if not keywords: keywords = ["nature"]
-    files, cur_dur = [], 0.0
+    files, cur_dur =[], 0.0
     all_videos =[]
 
     for kw in keywords:
@@ -423,7 +435,7 @@ def get_background_videos(keywords, target_duration, prefix_idx, sentence_contex
             system_instruction = context.SYS_PROMPT_BGV
             schema_def = genai.types.Schema(
                 type = genai.types.Type.OBJECT,
-                required = ["matches"],
+                required =["matches"],
                 properties = {
                     "matches": genai.types.Schema(
                         type = genai.types.Type.ARRAY,
