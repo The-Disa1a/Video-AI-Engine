@@ -7,7 +7,8 @@ def update_system_prompts():
     urls = {
         "Video_and_Music_Sup.txt": "https://raw.githubusercontent.com/The-Disa1a/System_Contents/refs/heads/main/gemini/Video_and_Music_Sup",
         "gif_selector.txt": "https://raw.githubusercontent.com/The-Disa1a/System_Contents/refs/heads/main/gemini/gif_selector",
-        "BGV_selector.txt": "https://raw.githubusercontent.com/The-Disa1a/System_Contents/refs/heads/main/gemini/BGV_selector"
+        "BGV_selector.txt": "https://raw.githubusercontent.com/The-Disa1a/System_Contents/refs/heads/main/gemini/BGV_selector",
+        "GAMING_SUPERVISOR.txt": "https://raw.githubusercontent.com/The-Disa1a/System_Contents/refs/heads/main/gemini/GAMING_SUPERVISOR"
     }
 
     prompts = {}
@@ -32,8 +33,10 @@ def update_system_prompts():
     context.SYS_PROMPT_SUPERVISOR = prompts["Video_and_Music_Sup.txt"]
     context.SYS_PROMPT_GIF = prompts["gif_selector.txt"]
     context.SYS_PROMPT_BGV = prompts["BGV_selector.txt"]
+    context.SYS_PROMPT_GAMING_SUPERVISOR = prompts["GAMING_SUPERVISOR.txt"]
 
-def get_llm_keywords(sentences_list):
+def get_llm_keywords_default(sentences_list):
+    """The default function using standard bg_keywords per scene."""
     try:
         from google import genai
         from google.genai import types
@@ -46,7 +49,7 @@ def get_llm_keywords(sentences_list):
 
         schema_def = genai.types.Schema(
             type = genai.types.Type.OBJECT,
-            required = ["global_bg_sound", "sentences"],
+            required =["global_bg_sound", "sentences"],
             properties = {
                 "global_bg_sound": genai.types.Schema(type = genai.types.Type.STRING),
                 "sentences": genai.types.Schema(
@@ -95,7 +98,7 @@ def get_llm_keywords(sentences_list):
             for attempt in range(2):
                 if context.CURRENT_GEMINI_INDEX >= len(context.GEMINI_API_KEYS):
                     print("[❌] All Gemini API keys exhausted.", flush=True)
-                    return None, None
+                    return None
 
                 print(f"   -> Try {attempt+1}/2", flush=True)
 
@@ -115,7 +118,7 @@ def get_llm_keywords(sentences_list):
                         if chunk.text:
                             print(".", end="", flush=True)
                             full_text += chunk.text
-                    print(" [Done!]", flush=True)
+                    print("[Done!]", flush=True)
 
                     if full_text:
                         res_data = json.loads(full_text)
@@ -148,4 +151,121 @@ def get_llm_keywords(sentences_list):
         print("[❌] All Gemini models exhausted.", flush=True)
     except Exception as e:
         print(f"[❌] Critical Master Gemini Failure: {str(e)}", flush=True)
-    return None, None
+    return None
+
+def get_llm_keywords_gaming(sentences_list):
+    """The gaming function using global_game_name instead of bg_keywords."""
+    try:
+        from google import genai
+        from google.genai import types
+
+        numbered_text_lines =[f"{i+1}. Sentence: {s}" for i, s in enumerate(sentences_list)]
+        numbered_text = "\n\n".join(numbered_text_lines)
+        expected_len = len(sentences_list)
+
+        system_instruction = context.SYS_PROMPT_GAMING_SUPERVISOR
+
+        schema_def = genai.types.Schema(
+            type = genai.types.Type.OBJECT,
+            required =["global_bg_sound", "global_game_name", "sentences"],
+            properties = {
+                "global_bg_sound": genai.types.Schema(type = genai.types.Type.STRING),
+                "global_game_name": genai.types.Schema(type = genai.types.Type.STRING),
+                "sentences": genai.types.Schema(
+                    type = genai.types.Type.ARRAY,
+                    items = genai.types.Schema(
+                        type = genai.types.Type.OBJECT,
+                        required =["scene_num", "popup_gifs", "wiki_images"],
+                        properties = {
+                            "scene_num": genai.types.Schema(type = genai.types.Type.STRING),
+                            "popup_gifs": genai.types.Schema(
+                                type = genai.types.Type.ARRAY,
+                                items = genai.types.Schema(
+                                    type = genai.types.Type.OBJECT,
+                                    properties = {"keyword": genai.types.Schema(type = genai.types.Type.STRING), "search_query": genai.types.Schema(type = genai.types.Type.STRING)},
+                                ),
+                            ),
+                            "wiki_images": genai.types.Schema(
+                                type = genai.types.Type.ARRAY,
+                                items = genai.types.Schema(
+                                    type = genai.types.Type.OBJECT,
+                                    properties = {"keyword": genai.types.Schema(type = genai.types.Type.STRING), "search": genai.types.Schema(type = genai.types.Type.STRING)},
+                                )
+                            )
+                        },
+                    ),
+                ),
+            },
+        )
+
+        for model_name in context.GEMINI_MODELS:
+            print(f"[🧠] Connecting to Gemini API (Gaming Model: {model_name})...", flush=True)
+
+            if "2.5" in model_name:
+                t_cfg = types.ThinkingConfig(thinking_budget=-1)
+            else:
+                t_cfg = types.ThinkingConfig(thinking_level="HIGH")
+
+            generate_content_config = types.GenerateContentConfig(
+                thinking_config=t_cfg,
+                response_mime_type="application/json",
+                response_schema=schema_def,
+                system_instruction=[types.Part.from_text(text=system_instruction)]
+            )
+
+            for attempt in range(2):
+                if context.CURRENT_GEMINI_INDEX >= len(context.GEMINI_API_KEYS):
+                    print("[❌] All Gemini API keys exhausted.", flush=True)
+                    return None
+
+                print(f"   -> Try {attempt+1}/2", flush=True)
+
+                try:
+                    current_api_key = context.GEMINI_API_KEYS[context.CURRENT_GEMINI_INDEX]
+                    client = genai.Client(api_key=current_api_key)
+
+                    response_stream = client.models.generate_content_stream(
+                        model=model_name,
+                        contents=[types.Content(role="user", parts=[types.Part.from_text(text=numbered_text)])],
+                        config=generate_content_config,
+                    )
+
+                    print("   [📡] Receiving stream: ", end="", flush=True)
+                    full_text = ""
+                    for chunk in response_stream:
+                        if chunk.text:
+                            print(".", end="", flush=True)
+                            full_text += chunk.text
+                    print(" [Done!]", flush=True)
+
+                    if full_text:
+                        res_data = json.loads(full_text)
+                        global_bg_sound = res_data.get("global_bg_sound", "cinematic ambient")
+                        global_game_name = res_data.get("global_game_name", "Minecraft")
+
+                        parsed_results =[]
+                        for p_obj in res_data.get("sentences",[]):
+                            parsed_results.append({
+                                "gifs": p_obj.get("popup_gifs",[]),
+                                "wiki": p_obj.get("wiki_images",[])
+                            })
+                        if len(parsed_results) == expected_len:
+                            print(f"\n[✅] Gemini mapped {expected_len} scenes | Game: '{global_game_name}' | BGM: '{global_bg_sound}'\n", flush=True)
+                            return parsed_results, global_bg_sound, global_game_name
+                        else:
+                            print(f"[⚠️] ERROR: Model returned {len(parsed_results)} scenes, expected {expected_len}.", flush=True)
+                except Exception as e:
+                    err_str = str(e)
+                    print(f"\n[⚠️] ERROR from {model_name}: {err_str}", flush=True)
+                    if "429" in err_str or "quota" in err_str.lower():
+                        print(f"[⚠️] Gemini Key {context.CURRENT_GEMINI_INDEX} exhausted. Switching key...", flush=True)
+                        context.CURRENT_GEMINI_INDEX += 1
+                        continue 
+                    if "503" in err_str:
+                        print("[⚠️] 503 Server Error detected. Skipping this model.", flush=True)
+                        break
+
+        print("[❌] All Gemini models exhausted.", flush=True)
+    except Exception as e:
+        print(f"[❌] Critical Master Gemini Failure: {str(e)}", flush=True)
+    return None
