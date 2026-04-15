@@ -8,6 +8,11 @@ def get_youtube_gameplay(game_name):
     print(f"\n[📡] Searching YouTube for global gameplay hook: '{search_query}'...", flush=True)
 
     cmd =["yt-dlp", f"ytsearch10:{search_query}", "--dump-json", "--no-playlist", "--flat-playlist"]
+    
+    # 🟢 COOKIE INJECTION (For the Search)
+    if os.path.exists("cookies.txt"):
+        cmd.extend(["--cookies", "cookies.txt"])
+
     result = subprocess.run(cmd, capture_output=True, text=True)
     
     all_videos =[]
@@ -23,7 +28,7 @@ def get_youtube_gameplay(game_name):
         except: pass
 
     if not all_videos:
-        print(f"[⚠️] No YouTube gameplay found for {game_name}.", flush=True)
+        print(f"[⚠️] No YouTube gameplay found for {game_name}. Error log: {result.stderr}", flush=True)
         return None
 
     ranked_id = all_videos[0]['id']
@@ -85,7 +90,6 @@ def get_youtube_gameplay(game_name):
     start_time = min(int(ranked_dur * 0.2), max(0, ranked_dur - 180))
     end_time = start_time + 180
     
-    # Check if we already have it from a previous run
     existing = glob.glob(f"yt_bg_{ranked_id}.*")
     if existing:
         print(f"[✅] YouTube hook already exists: {existing[0]}", flush=True)
@@ -99,13 +103,17 @@ def get_youtube_gameplay(game_name):
         "-f", "bestvideo[height<=1080][ext=mp4]/bestvideo[ext=mp4]/best",
         "--download-sections", f"*{start_time}-{end_time}",
         "--force-overwrites",
-        "-o", out_tmpl,
-        f"https://www.youtube.com/watch?v={ranked_id}"
+        "-o", out_tmpl
     ]
+    
+    # 🟢 COOKIE INJECTION (For the Download Slice)
+    if os.path.exists("cookies.txt"):
+        dl_cmd.extend(["--cookies", "cookies.txt"])
+        
+    dl_cmd.append(f"https://www.youtube.com/watch?v={ranked_id}")
     
     result = subprocess.run(dl_cmd, capture_output=True, text=True)
     
-    # Dynamically find the file regardless of extension
     downloaded = glob.glob(f"yt_bg_{ranked_id}.*")
     if downloaded:
         print(f"[✅] YouTube hook successfully sliced and downloaded! ({downloaded[0]})", flush=True)
@@ -251,7 +259,7 @@ def get_giphy_gif(search_query, sentence_context):
                     if "matches" in parsed_json and parsed_json["matches"]:
                         ranked_ids = [item["id"] for item in parsed_json["matches"] if "id" in item]
                         if ranked_ids:
-                            display_list = [f"{rid}:{next((g['title'] for g in gif_list if g['id'] == rid), 'Unknown')}" for rid in ranked_ids]
+                            display_list =[f"{rid}:{next((g['title'] for g in gif_list if g['id'] == rid), 'Unknown')}" for rid in ranked_ids]
                             print(f"[🤖 Gif's Gemma Choosed]: {json.dumps(display_list)}", flush=True)
                             success = True
                             break
